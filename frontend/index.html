@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Movie Watch Party</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-4">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-4">🎬 Movie Watch Party</h1>
+
+    <div class="mb-4">
+      <label class="block mb-2">Room ID:</label>
+      <div class="flex space-x-2">
+        <input id="roomIdInput" class="p-2 w-full text-black" readonly />
+        <button onclick="copyRoomLink()" class="bg-green-600 px-4 py-2 rounded">Copy Link</button>
+      </div>
+      <p class="text-sm mt-1 text-gray-400">Share this link with your friend to sync video and chat.</p>
+    </div>
+
+    <div class="mb-4">
+      <input type="file" id="videoFile" accept="video/*" class="mb-2" />
+      <video id="videoPlayer" class="w-full bg-black" controls></video>
+    </div>
+
+    <div class="mb-4">
+      <h2 class="text-xl mb-2">💬 Chat</h2>
+      <div id="chatBox" class="bg-gray-800 h-40 overflow-y-auto p-2 rounded mb-2"></div>
+      <input id="chatInput" placeholder="Type a message" class="p-2 text-black w-3/4"/>
+      <button onclick="sendMessage()" class="bg-blue-600 px-4 py-2 rounded ml-2">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const socket = io('http://localhost:3000'); // Replace with your backend URL
+    const player = document.getElementById('videoPlayer');
+    const chatBox = document.getElementById('chatBox');
+
+    // Generate random Room ID
+    function generateRoomId(length = 6) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let roomId = '';
+      for (let i = 0; i < length; i++) {
+        roomId += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return roomId;
+    }
+
+    // Get or generate Room ID
+    const urlParams = new URLSearchParams(window.location.search);
+    let roomId = urlParams.get('room') || generateRoomId();
+    document.getElementById('roomIdInput').value = roomId;
+    if (!urlParams.get('room')) {
+      // Redirect to URL with room query
+      window.history.replaceState({}, '', `?room=${roomId}`);
+    }
+    socket.emit('join-room', roomId);
+
+    // File upload
+    document.getElementById('videoFile').addEventListener('change', function () {
+      const file = this.files[0];
+      if (file) {
+        player.src = URL.createObjectURL(file);
+        player.load();
+      }
+    });
+
+    // Sync video events
+    player.addEventListener('play', () => {
+      socket.emit('video-event', { roomId, action: 'play', currentTime: player.currentTime });
+    });
+
+    player.addEventListener('pause', () => {
+      socket.emit('video-event', { roomId, action: 'pause', currentTime: player.currentTime });
+    });
+
+    player.addEventListener('seeked', () => {
+      socket.emit('video-event', { roomId, action: 'seek', currentTime: player.currentTime });
+    });
+
+    socket.on('video-event', ({ action, currentTime }) => {
+      if (action === 'play') {
+        player.currentTime = currentTime;
+        player.play();
+      } else if (action === 'pause') {
+        player.currentTime = currentTime;
+        player.pause();
+      } else if (action === 'seek') {
+        player.currentTime = currentTime;
+      }
+    });
+
+    // Chat
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const message = input.value;
+      if (!message) return;
+      socket.emit('chat-message', { roomId, message });
+      addMessage(`You: ${message}`);
+      input.value = '';
+    }
+
+    socket.on('chat-message', (message) => {
+      addMessage(`Friend: ${message}`);
+    });
+
+    function addMessage(msg) {
+      const p = document.createElement('p');
+      p.textContent = msg;
+      chatBox.appendChild(p);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Copy link to clipboard
+    function copyRoomLink() {
+      const roomUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+      navigator.clipboard.writeText(roomUrl).then(() => {
+        alert('Room link copied!');
+      });
+    }
+  </script>
+</body>
+</html>
